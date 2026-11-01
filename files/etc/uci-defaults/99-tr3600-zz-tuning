@@ -1,0 +1,48 @@
+#!/bin/sh
+# First-boot defaults: security, performance and dorm Wi-Fi uplink resilience.
+# No passwords, Wi-Fi keys, subscriptions or VPN identities in this image.
+
+# --- Security ---------------------------------------------------------------
+# SSH only on the LAN side (WAN input is already rejected by the firewall).
+uci -q set dropbear.@dropbear[0].Interface='lan'
+uci -q commit dropbear
+# Web UI: always redirect to HTTPS.
+uci -q set uhttpd.main.redirect_https='1'
+uci -q commit uhttpd
+# Drop invalid packets; keep SYN flood protection on.
+uci -q set firewall.@defaults[0].drop_invalid='1'
+uci -q set firewall.@defaults[0].synflood_protect='1'
+uci -q commit firewall
+# Services that should only run when the owner turns them on.
+for svc in tailscale samba4 wsdd2; do
+	[ -x "/etc/init.d/$svc" ] && "/etc/init.d/$svc" disable
+done
+
+# --- Performance -------------------------------------------------------------
+# Spread packet processing and interrupts over both CPU cores (matters for
+# proxied/VPN traffic, which cannot use hardware offload).
+uci -q set network.globals.packet_steering='1'
+uci -q commit network
+uci -q set irqbalance.irqbalance.enabled='1'
+uci -q commit irqbalance
+
+# --- Dorm Wi-Fi uplink (travelmate) ------------------------------------------
+# Run "Services -> Travelmate -> Interface Wizard" once, then add the dorm
+# network under "Wireless Stations". These options keep it reconnecting.
+uci -q set travelmate.global.trm_netcheck='1'   # no internet counts as failure
+uci -q set travelmate.global.trm_proactive='1'  # move to a better repeater
+uci -q set travelmate.global.trm_maxretry='0'   # never disable the uplink
+uci -q set travelmate.global.trm_captive='0'    # dorm has no login page
+uci -q commit travelmate
+
+# --- Last-resort watchdog ----------------------------------------------------
+# Reboot only after 30 minutes without internet (travelmate handles the rest).
+while uci -q delete watchcat.@watchcat[0]; do :; done
+uci -q add watchcat watchcat >/dev/null
+uci -q set watchcat.@watchcat[-1].mode='ping_reboot'
+uci -q set watchcat.@watchcat[-1].period='30m'
+uci -q set watchcat.@watchcat[-1].pinghosts='1.1.1.1 8.8.8.8'
+uci -q set watchcat.@watchcat[-1].forcedelay='60'
+uci -q commit watchcat
+
+exit 0
