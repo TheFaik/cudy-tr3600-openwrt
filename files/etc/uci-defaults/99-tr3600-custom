@@ -19,4 +19,56 @@ mkdir -p /etc/openclash/config /etc/openclash/backup /etc/openclash/core
 /etc/init.d/https-dns-proxy disable
 /etc/init.d/tr3600-fan enable
 sed -i 's/>{{ hostname }}<\/a>/>Openwrt<\/a>/' /usr/share/ucode/luci/template/themes/argon/header.ut
+
+# --- Security ---------------------------------------------------------------
+# SSH only on the LAN side (WAN input is already rejected by the firewall).
+uci -q set dropbear.@dropbear[0].Interface='lan'
+uci -q commit dropbear
+# Web UI: always redirect to HTTPS.
+uci -q set uhttpd.main.redirect_https='1'
+uci -q commit uhttpd
+# Drop invalid packets; keep SYN flood protection on.
+uci -q set firewall.@defaults[0].drop_invalid='1'
+uci -q set firewall.@defaults[0].synflood_protect='1'
+uci -q commit firewall
+# Services that should only run when the owner turns them on.
+for svc in tailscale samba4 wsdd2; do
+	[ -x "/etc/init.d/$svc" ] && "/etc/init.d/$svc" disable
+done
+
+# --- Performance -------------------------------------------------------------
+# Spread packet processing and interrupts over both CPU cores (matters for
+# proxied/VPN traffic, which cannot use hardware offload).
+uci -q set network.globals.packet_steering='1'
+uci -q commit network
+uci -q set irqbalance.irqbalance.enabled='1'
+uci -q commit irqbalance
+
+# --- Dorm Wi-Fi uplink (travelmate) ------------------------------------------
+# Run "Services -> Travelmate -> Interface Wizard" once, then add the dorm
+# network under "Wireless Stations". These options keep it reconnecting.
+uci -q set travelmate.global.trm_netcheck='1'   # no internet counts as failure
+uci -q set travelmate.global.trm_proactive='1'  # move to a better repeater
+uci -q set travelmate.global.trm_maxretry='0'   # never disable the uplink
+uci -q set travelmate.global.trm_captive='0'    # dorm has no login page
+uci -q commit travelmate
+
+# --- Last-resort watchdog ----------------------------------------------------
+# Reboot only after 30 minutes without internet (travelmate handles the rest).
+while uci -q delete watchcat.@watchcat[0]; do :; done
+uci -q add watchcat watchcat >/dev/null
+uci -q set watchcat.@watchcat[-1].mode='ping_reboot'
+uci -q set watchcat.@watchcat[-1].period='30m'
+uci -q set watchcat.@watchcat[-1].pinghosts='1.1.1.1 8.8.8.8'
+uci -q set watchcat.@watchcat[-1].forcedelay='60'
+uci -q commit watchcat
+
+# --- TCP tuning for connections the router itself makes (proxy, DNS) --------
+cat > /etc/sysctl.d/99-tr3600-perf.conf <<'SYSCTL'
+net.ipv4.tcp_congestion_control=bbr
+net.core.rmem_max=4194304
+net.core.wmem_max=4194304
+net.ipv4.tcp_rmem=4096 131072 4194304
+net.ipv4.tcp_wmem=4096 65536 4194304
+SYSCTL
 exit 0
