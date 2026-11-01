@@ -16,6 +16,12 @@ REVIEWED_THEME_REFRESH = (
     'f49e6516e487dd89327158cc30b5a8636dbcd1a83e8216e1484d6af2825bd413',
 )
 
+# Reviewed: firmware stage uses every runner core (make -j$(nproc)) instead of -j2.
+REVIEWED_COMPILE_JOBS_REFRESH = (
+    '3a54ba905ef16c397ad7aa5ab5cf56aad84ebdc09b6bb96b6d90addc7ad316c8',
+    '1ed5e111795dcbd4261f4fab2939a1b69696adf1748ba2f4c020e01b8b0b16e7',
+)
+
 
 def allowed_delta(previous, current):
     changed = sorted(name for name in previous.keys() | current.keys()
@@ -23,6 +29,9 @@ def allowed_delta(previous, current):
     for name in changed:
         if name == 'scripts/theme_customizations.py' and (
                 previous.get(name), current.get(name)) == REVIEWED_THEME_REFRESH:
+            continue
+        if name == 'scripts/compile-stage.sh' and (
+                previous.get(name), current.get(name)) == REVIEWED_COMPILE_JOBS_REFRESH:
             continue
         if name.startswith(('package/', 'files/')) or name == 'config.seed':
             continue

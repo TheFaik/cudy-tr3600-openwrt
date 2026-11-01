@@ -10,7 +10,7 @@ case "$stage" in
   *) echo "Unknown stage" >&2; exit 2;;
 esac
 set +e
-timeout --signal=TERM --kill-after=120s 240m make -j2 V=s "${targets[@]}" 2>&1 | tee "../build-${stage}.log"
+timeout --signal=TERM --kill-after=120s 240m make -j"$(nproc)" V=s "${targets[@]}" 2>&1 | tee "../build-${stage}.log"
 pipeline=("${PIPESTATUS[@]}")
 status=${pipeline[0]}
 if [[ "$status" == 0 && "${pipeline[1]}" != 0 ]]; then
